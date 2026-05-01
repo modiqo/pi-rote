@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "keywords": ["pi-package"],
+  "license": "Apache-2.0",
   "pi": {
     "extensions": ["./extensions"],
     "skills": ["./skills"]
