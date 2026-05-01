@@ -1,6 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -56,56 +53,19 @@ const LOCAL_DEV_PATTERNS = [
   /^\s*(make|just)\b/,
 ];
 const DEFAULT_WORKSPACE_ROOT = "~/.rote/rote/workspaces";
-const GENERATED_CORE_SKILL_SEGMENTS = ["cache", "pi-rote", "skills", "rote"] as const;
-const GENERATED_CORE_SKILL_VERSION_FILE = ".pi-rote-rote-version";
-
-export function resolvePiAgentDir(env: NodeJS.ProcessEnv, userHome: string): string {
-  return env.PI_CODING_AGENT_DIR || join(userHome, ".pi", "agent");
-}
-
-export function getGeneratedCoreSkillDir(piAgentDir: string): string {
-  return join(piAgentDir, ...GENERATED_CORE_SKILL_SEGMENTS);
+export function getBundledRoteSkillDir(extensionModuleUrl: string): string {
+  return join(dirname(fileURLToPath(extensionModuleUrl)), "..", "skills", "rote");
 }
 
 export function getBundledRoteAdapterSkillDir(extensionModuleUrl: string): string {
   return join(dirname(fileURLToPath(extensionModuleUrl)), "..", "skills", "rote-adapter");
 }
 
-export function buildRoteSkillInstallArgs(skillDir: string): string[] {
-  return ["install", "skill", "--provider", "cursor", "--path", skillDir];
-}
-
-export function hasInstalledCoreRoteSkill(
-  skillDir: string,
-  exists: (path: string) => boolean = existsSync,
-): boolean {
-  return exists(join(skillDir, "SKILL.md"));
-}
-
-export function needsCoreRoteSkillBootstrap(input: {
-  coreSkillInstalled: boolean;
-  roteVersion?: string;
-  cachedRoteVersion?: string;
-}): boolean {
-  if (!input.coreSkillInstalled) {
-    return true;
-  }
-
-  if (!input.roteVersion) {
-    return false;
-  }
-
-  return input.cachedRoteVersion !== input.roteVersion;
-}
-
 export function buildDiscoveredSkillPaths(input: {
-  bundledSkillDir: string;
-  generatedCoreSkillDir: string;
-  generatedCoreSkillReady: boolean;
+  bundledRoteSkillDir: string;
+  bundledRoteAdapterSkillDir: string;
 }): string[] {
-  return input.generatedCoreSkillReady
-    ? [input.bundledSkillDir, input.generatedCoreSkillDir]
-    : [input.bundledSkillDir];
+  return [input.bundledRoteSkillDir, input.bundledRoteAdapterSkillDir];
 }
 
 export function parsePendingStubFacts(stdout: string): Partial<RoteRuntimeFacts> {
@@ -454,101 +414,18 @@ async function probeRoteSupport(
   return { exploreHits, catalogHits };
 }
 
-interface CoreSkillBootstrapState {
-  bundledSkillDir: string;
-  generatedCoreSkillDir: string;
-  generatedCoreSkillReady: boolean;
-  bootstrapAttempted: boolean;
-  bootstrapError?: string;
-  cachedRoteVersion?: string;
-}
-
-function readGeneratedCoreSkillVersion(skillDir: string): string | undefined {
-  const versionFile = join(skillDir, GENERATED_CORE_SKILL_VERSION_FILE);
-  if (!existsSync(versionFile)) {
-    return undefined;
-  }
-
-  try {
-    const value = readFileSync(versionFile, "utf8").trim();
-    return value.length > 0 ? value : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-async function ensureCoreRoteSkillInstalled(
-  exec: ExtensionAPI["exec"],
-  skillDir: string,
-  roteVersion?: string,
-): Promise<Pick<CoreSkillBootstrapState, "generatedCoreSkillReady" | "bootstrapAttempted" | "bootstrapError" | "cachedRoteVersion">> {
-  const cachedRoteVersion = readGeneratedCoreSkillVersion(skillDir);
-  const alreadyInstalled = hasInstalledCoreRoteSkill(skillDir);
-  const shouldBootstrap = needsCoreRoteSkillBootstrap({
-    coreSkillInstalled: alreadyInstalled,
-    roteVersion,
-    cachedRoteVersion,
-  });
-
-  if (!shouldBootstrap) {
-    return {
-      generatedCoreSkillReady: alreadyInstalled,
-      bootstrapAttempted: false,
-      cachedRoteVersion,
-    };
-  }
-
-  await mkdir(skillDir, { recursive: true });
-  const result = await exec("rote", buildRoteSkillInstallArgs(skillDir));
-  const generatedCoreSkillReady = hasInstalledCoreRoteSkill(skillDir);
-
-  if (result.code !== 0 || !generatedCoreSkillReady) {
-    const message = [result.stderr.trim(), result.stdout.trim()]
-      .filter((value) => value.length > 0)
-      .join("\n") || "rote install did not materialize SKILL.md";
-
-    return {
-      generatedCoreSkillReady,
-      bootstrapAttempted: true,
-      bootstrapError: message,
-      cachedRoteVersion,
-    };
-  }
-
-  if (roteVersion) {
-    await writeFile(join(skillDir, GENERATED_CORE_SKILL_VERSION_FILE), `${roteVersion}\n`, "utf8");
-  }
-
-  return {
-    generatedCoreSkillReady: true,
-    bootstrapAttempted: true,
-    cachedRoteVersion: roteVersion ?? cachedRoteVersion,
-  };
-}
-
 export default function roteExtension(pi: ExtensionAPI) {
   let facts: RoteRuntimeFacts = { roteAvailable: false };
   const probeCache = new Map<string, RoteProbeResult>();
 
-  const bundledSkillDir = getBundledRoteAdapterSkillDir(import.meta.url);
-  const generatedCoreSkillDir = getGeneratedCoreSkillDir(
-    resolvePiAgentDir(process.env, homedir()),
-  );
-
-  let bootstrapState: CoreSkillBootstrapState = {
-    bundledSkillDir,
-    generatedCoreSkillDir,
-    generatedCoreSkillReady: hasInstalledCoreRoteSkill(generatedCoreSkillDir),
-    bootstrapAttempted: false,
-    cachedRoteVersion: readGeneratedCoreSkillVersion(generatedCoreSkillDir),
-  };
+  const bundledRoteSkillDir = getBundledRoteSkillDir(import.meta.url);
+  const bundledRoteAdapterSkillDir = getBundledRoteAdapterSkillDir(import.meta.url);
 
   pi.on("resources_discover", async () => {
     return {
       skillPaths: buildDiscoveredSkillPaths({
-        bundledSkillDir: bootstrapState.bundledSkillDir,
-        generatedCoreSkillDir: bootstrapState.generatedCoreSkillDir,
-        generatedCoreSkillReady: bootstrapState.generatedCoreSkillReady,
+        bundledRoteSkillDir,
+        bundledRoteAdapterSkillDir,
       }),
     };
   });
@@ -556,18 +433,6 @@ export default function roteExtension(pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     facts = await probeRoteFacts((command, args, options) => pi.exec(command, args, options));
 
-    if (facts.roteAvailable) {
-      const bootstrapResult = await ensureCoreRoteSkillInstalled(
-        (command, args, options) => pi.exec(command, args, options),
-        bootstrapState.generatedCoreSkillDir,
-        facts.roteVersion,
-      );
-
-      bootstrapState = {
-        ...bootstrapState,
-        ...bootstrapResult,
-      };
-    }
 
     if (!ctx.hasUI) {
       return;
@@ -579,16 +444,6 @@ export default function roteExtension(pi: ExtensionAPI) {
         "info",
       );
 
-      if (bootstrapState.bootstrapAttempted && bootstrapState.generatedCoreSkillReady) {
-        ctx.ui.notify("pi-rote bootstrapped the core rote skill", "info");
-      }
-
-      if (bootstrapState.bootstrapError) {
-        ctx.ui.notify(
-          "pi-rote could not refresh the core rote skill automatically; continuing with existing hints and any cached skill copy.",
-          "warning",
-        );
-      }
     } else {
       ctx.ui.notify(
         "rote CLI not found on PATH; rote-first workflow guidance will be advisory only.",

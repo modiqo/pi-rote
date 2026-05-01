@@ -6,15 +6,11 @@ import {
   buildDiscoveredSkillPaths,
   buildPromptAppend,
   buildRoteOpportunityHint,
-  buildRoteSkillInstallArgs,
   deriveActiveRoteContextFromCommand,
   getBundledRoteAdapterSkillDir,
-  getGeneratedCoreSkillDir,
-  hasInstalledCoreRoteSkill,
-  needsCoreRoteSkillBootstrap,
+  getBundledRoteSkillDir,
   parseExploreHits,
   parsePendingStubFacts,
-  resolvePiAgentDir,
   type ActiveRoteContext,
   type BashCommandAnalysis,
   type RoteRuntimeFacts,
@@ -198,27 +194,6 @@ test("buildRoteOpportunityHint falls back to adapter catalog guidance when no in
   assert.match(hint!, /rote adapter new supabase --yes/i);
 });
 
-test("resolvePiAgentDir prefers PI_CODING_AGENT_DIR when set", () => {
-  assert.equal(
-    resolvePiAgentDir({ PI_CODING_AGENT_DIR: "/tmp/pi-agent" }, "/Users/rob"),
-    "/tmp/pi-agent",
-  );
-});
-
-test("resolvePiAgentDir falls back to ~/.pi/agent when env override is missing", () => {
-  assert.equal(
-    resolvePiAgentDir({}, "/Users/rob"),
-    "/Users/rob/.pi/agent",
-  );
-});
-
-test("getGeneratedCoreSkillDir uses the pi-managed cache location", () => {
-  assert.equal(
-    getGeneratedCoreSkillDir("/Users/rob/.pi/agent"),
-    "/Users/rob/.pi/agent/cache/pi-rote/skills/rote",
-  );
-});
-
 test("getBundledRoteAdapterSkillDir resolves ../skills/rote-adapter from the extension module url", () => {
   assert.equal(
     getBundledRoteAdapterSkillDir("file:///tmp/pi-rote/extensions/rote.ts"),
@@ -226,87 +201,22 @@ test("getBundledRoteAdapterSkillDir resolves ../skills/rote-adapter from the ext
   );
 });
 
-test("buildRoteSkillInstallArgs uses the cursor provider and custom path", () => {
-  assert.deepEqual(buildRoteSkillInstallArgs("/tmp/pi-agent/cache/pi-rote/skills/rote"), [
-    "install",
-    "skill",
-    "--provider",
-    "cursor",
-    "--path",
-    "/tmp/pi-agent/cache/pi-rote/skills/rote",
-  ]);
-});
-
-test("hasInstalledCoreRoteSkill checks for SKILL.md inside the generated directory", () => {
+test("getBundledRoteSkillDir resolves ../skills/rote from the extension module url", () => {
   assert.equal(
-    hasInstalledCoreRoteSkill(
-      "/tmp/pi-agent/cache/pi-rote/skills/rote",
-      (path) => path === "/tmp/pi-agent/cache/pi-rote/skills/rote/SKILL.md",
-    ),
-    true,
-  );
-
-  assert.equal(
-    hasInstalledCoreRoteSkill(
-      "/tmp/pi-agent/cache/pi-rote/skills/rote",
-      () => false,
-    ),
-    false,
+    getBundledRoteSkillDir("file:///tmp/pi-rote/extensions/rote.ts"),
+    "/tmp/pi-rote/skills/rote",
   );
 });
 
-test("needsCoreRoteSkillBootstrap returns true when the generated skill is missing", () => {
-  assert.equal(
-    needsCoreRoteSkillBootstrap({
-      coreSkillInstalled: false,
-      roteVersion: "0.4.0",
-      cachedRoteVersion: undefined,
-    }),
-    true,
-  );
-});
-
-test("needsCoreRoteSkillBootstrap returns true when the cached skill version differs", () => {
-  assert.equal(
-    needsCoreRoteSkillBootstrap({
-      coreSkillInstalled: true,
-      roteVersion: "0.4.0",
-      cachedRoteVersion: "0.3.9",
-    }),
-    true,
-  );
-});
-
-test("needsCoreRoteSkillBootstrap returns false when the generated skill exists and version matches", () => {
-  assert.equal(
-    needsCoreRoteSkillBootstrap({
-      coreSkillInstalled: true,
-      roteVersion: "0.4.0",
-      cachedRoteVersion: "0.4.0",
-    }),
-    false,
-  );
-});
-
-test("buildDiscoveredSkillPaths always includes bundled skill and conditionally includes generated core skill", () => {
+test("buildDiscoveredSkillPaths always includes bundled rote and rote-adapter skills", () => {
   assert.deepEqual(
     buildDiscoveredSkillPaths({
-      bundledSkillDir: "/tmp/pi-rote/skills/rote-adapter",
-      generatedCoreSkillDir: "/tmp/pi-agent/cache/pi-rote/skills/rote",
-      generatedCoreSkillReady: true,
+      bundledRoteSkillDir: "/tmp/pi-rote/skills/rote",
+      bundledRoteAdapterSkillDir: "/tmp/pi-rote/skills/rote-adapter",
     }),
     [
+      "/tmp/pi-rote/skills/rote",
       "/tmp/pi-rote/skills/rote-adapter",
-      "/tmp/pi-agent/cache/pi-rote/skills/rote",
     ],
-  );
-
-  assert.deepEqual(
-    buildDiscoveredSkillPaths({
-      bundledSkillDir: "/tmp/pi-rote/skills/rote-adapter",
-      generatedCoreSkillDir: "/tmp/pi-agent/cache/pi-rote/skills/rote",
-      generatedCoreSkillReady: false,
-    }),
-    ["/tmp/pi-rote/skills/rote-adapter"],
   );
 });
